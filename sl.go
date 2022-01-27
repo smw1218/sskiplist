@@ -14,11 +14,13 @@ type Orderable interface {
 
 type SL struct {
 	head        *Element
-	tail        *Element
 	len         int
 	maxLevel    int
 	levelLookup []int
 	randGen     *rand.Rand
+	// pre-allocations; this is very explicitly not goroutine safe
+	prev   []*link
+	lskips []int
 }
 
 type Element struct {
@@ -44,7 +46,7 @@ func (l link) String() string {
 }
 
 func New() *SL {
-	return NewWithLevel(10)
+	return NewWithLevel(18)
 }
 
 func NewWithLevel(maxLevel int) *SL {
@@ -52,6 +54,8 @@ func NewWithLevel(maxLevel int) *SL {
 		maxLevel:    maxLevel,
 		levelLookup: probabilityTable(maxLevel),
 		randGen:     rand.New(rand.NewSource(7)), // make this deterministic
+		prev:        make([]*link, maxLevel),
+		lskips:      make([]int, maxLevel),
 	}
 }
 
@@ -61,12 +65,19 @@ func (sl *SL) height() int {
 	return len(sl.head.levelLinks)
 }
 
+func (sl *SL) Size() int {
+	return sl.len
+}
+
 func (sl *SL) Set(v Orderable) {
 	//fmt.Println("Starting insert", v)
 	e := sl.newElement(v)
 	// first insertion
 	if sl.head == nil {
 		sl.head = e
+		for i := range e.levelLinks {
+			e.levelLinks[i].offset = 1
+		}
 		sl.len = 1
 		return
 	}
@@ -96,68 +107,91 @@ func (sl *SL) Set(v Orderable) {
 		//printList(sl)
 	}
 
-	// search from the head
-	runner := sl.head
-	prevLinks := make([]*link, sl.height())
-	// accumulated offsets at each level
-	lskips := make([]int, sl.height())
-	// TODO remove me
-	for i, _ := range lskips {
-		lskips[i] = 0
-	}
-	for i := 0; i < sl.height(); i++ {
-		// start at the highest level
-		l := sl.height() - 1 - i
-		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(e.value) {
-			lskips[l] += runner.levelLinks[l].offset
-			runner = runner.levelLinks[l].next
-		}
-		prevLinks[l] = &runner.levelLinks[l]
-	}
-	// accumulate the skips for each
-	// acclskips := make([]int, len(lskips))
-	// for i, ls := range lskips {
-	// 	if i == 0 {
-	// 		acclskips[i] = ls
-	// 	} else {
-	// 		acclskips[i] = acclskips[i-1] + ls
-	// 	}
+	_, _, prevLinks, lskips := sl.prevWithLinks(e.value)
+
+	// prevStrings := make([]string, len(prevLinks))
+	// for i, p := range prevLinks {
+	// 	prevStrings[i] = p.String()
 	// }
-	// for i, l := range prevLinks {
-	// 	fmt.Printf("%v %d %p\n", v, i, l.next)
-	// }
-	// fmt.Println()
-	//fmt.Println("Inserting", e.value)
-	//fmt.Printf("lskips: %v\n", lskips)
-	//fmt.Printf("acclskips: %v\n", acclskips)
-	// prevLinksStr := make([]string, len(prevLinks))
-	// for i, l := range prevLinks {
-	// 	prevLinksStr[i] = l.String()
-	// }
-	// fmt.Printf("prevs: %v\n", strings.Join(prevLinksStr, "\t"))
+	// fmt.Printf("prevs: %v\n", strings.Join(prevStrings, " | "))
+	// fmt.Printf("lskips: %v\n", lskips)
 
 	// this accumulates all the nodes skipped prior to this insertion
-	// for all levels so that the previous links for thos levels can be updated
+	// for all levels so that the previous links for those levels can be updated
 	accLevelSkips := lskips[0]
-	for i, _ := range e.levelLinks {
-		e.levelLinks[i] = *prevLinks[i]
-		if i == 0 {
-			e.levelLinks[i].offset = 1
+
+	// relink and update offsets
+	for i := range prevLinks {
+		if i < len(e.levelLinks) {
+			// update the links
+			e.levelLinks[i] = *prevLinks[i]
+			prevLinks[i].next = e
+
+			// update the link offsets
+			if i > 0 {
+				e.levelLinks[i].offset = (prevLinks[i].offset + 1) - (accLevelSkips + 1)
+				prevLinks[i].offset = accLevelSkips + 1
+				accLevelSkips += lskips[i]
+			} else {
+				e.levelLinks[i].offset = 1
+			}
 		} else {
-			e.levelLinks[i].offset = (prevLinks[i].offset + 1) - (accLevelSkips + 1) // - (acclskips[i-1] + 1)
+			// these are links above the current insertion level
+			// do +1 to cover the insertion
+			prevLinks[i].offset++
 		}
-		prevLinks[i].next = e
-		if i > 0 {
-			prevLinks[i].offset = accLevelSkips + 1 //acclskips[i-1] + 1
-		}
-		accLevelSkips += lskips[i]
-	}
-	// these are links above the current insertion level
-	// do +1 to cover the insertion
-	for i := len(e.levelLinks); i < len(prevLinks); i++ {
-		prevLinks[i].offset++
 	}
 	sl.len++
+}
+
+func (sl *SL) prevWithLinks(v Orderable) (indexCounter int, e *Element, prev []*link, lskips []int) {
+	// search from the head
+	runner := sl.head
+	//prev = make([]*link, sl.height())
+	// accumulated offsets at each level
+	//lskips = make([]int, sl.height())
+	height := sl.height()
+	sl.resetPrevs(height)
+	for i := 0; i < height; i++ {
+		// start at the highest level
+		l := height - 1 - i
+		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(v) {
+			sl.lskips[l] += runner.levelLinks[l].offset
+			indexCounter += runner.levelLinks[l].offset
+			runner = runner.levelLinks[l].next
+		}
+		sl.prev[l] = &runner.levelLinks[l]
+	}
+
+	return indexCounter, runner, sl.prev[:height], sl.lskips[:height]
+}
+
+func (sl *SL) resetPrevs(height int) {
+	for i := 0; i < height; i++ {
+		sl.prev[i] = nil
+		sl.lskips[i] = 0
+	}
+}
+
+// for testing
+func (sl *SL) checkOffsets() error {
+	runner := sl.head
+	offsetSums := make([]int, sl.height())
+	for runner != nil {
+		for i, l := range runner.levelLinks {
+			if l.offset < 1 {
+				return fmt.Errorf("invalid link offset at: %v", runner)
+			}
+			offsetSums[i] += l.offset
+		}
+		runner = runner.levelLinks[0].next
+	}
+	for i, levelSum := range offsetSums {
+		if levelSum != sl.len {
+			return fmt.Errorf("level %d incorrect sum %v, expected %v", i, levelSum, sl.len)
+		}
+	}
+	return nil
 }
 
 func (sl *SL) Get(v Orderable) (int, *Element) {
@@ -167,25 +201,27 @@ func (sl *SL) Get(v Orderable) (int, *Element) {
 	if v.Less(sl.head.value) {
 		return 0, nil
 	}
+	indexCounter, runner := sl.prevElement(v)
+	if runner.value.Equal(v) {
+		return indexCounter, runner.levelLinks[0].next
+	}
+	if runner.levelLinks[0].next != nil && runner.levelLinks[0].next.value.Equal(v) {
+		return indexCounter + 1, runner.levelLinks[0].next
+	}
+	return indexCounter + 1, nil
+}
+
+func (sl *SL) prevElement(v Orderable) (int, *Element) {
 	runner := sl.head
 	indexCounter := 0
-	height := sl.height()
-	//var curlink link
-	for i := 0; i < height; i++ {
-		// start at the highest level
-		l := height - 1 - i
+	// start at the highest level
+	for l := sl.height() - 1; l >= 0; l-- {
 		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(v) {
 			indexCounter += runner.levelLinks[l].offset
 			runner = runner.levelLinks[l].next
 		}
 	}
-	if runner.value.Equal(v) {
-		return indexCounter, runner.levelLinks[0].next
-	}
-	if runner.levelLinks[0].next.value.Equal(v) {
-		return indexCounter + 1, runner.levelLinks[0].next
-	}
-	return indexCounter + 1, nil
+	return indexCounter, runner
 }
 
 func (sl *SL) Remove(v Orderable) (int, *Element) {
@@ -196,34 +232,26 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 	if sl.head.value.Equal(v) {
 		oldHead := sl.head
 		newHead := sl.head.levelLinks[0].next
-		newLevelLinks := make([]link, len(oldHead.levelLinks))
-		// copy whatever levelinks exist on the new head
-		for i, l := range newHead.levelLinks {
-			newLevelLinks[i] = l
+		if newHead != nil {
+			newLevelLinks := make([]link, len(oldHead.levelLinks))
+			// copy whatever levelinks exist on the new head
+			for i, l := range newHead.levelLinks {
+				newLevelLinks[i] = l
+			}
+			// if the oldHead has more levels, copy and decrement
+			for i := len(newHead.levelLinks); i < len(newLevelLinks); i++ {
+				newLevelLinks[i] = oldHead.levelLinks[i]
+				newLevelLinks[i].offset--
+			}
+			newHead.levelLinks = newLevelLinks
 		}
-		// if the oldHead has more levels, copy and decrement
-		for i := len(newHead.levelLinks); i < len(newLevelLinks); i++ {
-			newLevelLinks[i] = oldHead.levelLinks[i]
-			newLevelLinks[i].offset--
-		}
-		newHead.levelLinks = newLevelLinks
 		sl.head = newHead
 		sl.len--
 		return 0, oldHead
 	}
 	// search from the head
-	runner := sl.head
-	prevLinks := make([]*link, sl.height())
-	indexCounter := 0
-	for i := 0; i < sl.height(); i++ {
-		// start at the highest level
-		l := sl.height() - 1 - i
-		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(v) {
-			indexCounter += runner.levelLinks[l].offset
-			runner = runner.levelLinks[l].next
-		}
-		prevLinks[l] = &runner.levelLinks[l]
-	}
+	indexCounter, runner, prevLinks, _ := sl.prevWithLinks(v)
+
 	// didn't find it
 	removeMe := runner.levelLinks[0].next
 	if removeMe == nil || !removeMe.value.Equal(v) {
@@ -251,12 +279,8 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 
 func (sl *SL) newElement(v Orderable) *Element {
 	l := sl.randLevel()
-	ll := make([]link, l+1)
-	for i, _ := range ll {
-		ll[i].offset = 1
-	}
 	return &Element{
-		levelLinks: ll,
+		levelLinks: make([]link, l+1),
 		value:      v,
 	}
 }
@@ -273,12 +297,13 @@ func printList(sl *SL) {
 }
 
 const (
-	// Suitable for math.Floor(math.Pow(math.E, 18)) == 65659969 elements in list
 	DefaultMaxLevel int = 18
-	DefaultProbability
+	// DefaultProbability inverse so 2 => 1/2 for each subsequent level
+	DefaultProbability = 2
 )
 
-func (sl *SL) randLevel() (level int) {
+// returns the level index (zero-based)
+func (sl *SL) randLevel() int {
 	r := sl.randGen.Int()
 	for i := 1; i < len(sl.levelLookup); i++ {
 		if r > sl.levelLookup[i] {
@@ -289,15 +314,13 @@ func (sl *SL) randLevel() (level int) {
 }
 
 // probabilityTable calculates in advance the probabilities
-// along (1/e)^x
 func probabilityTable(level int) []int {
 	table := make([]int, level)
-	var probability float64 = 1 / math.E
 	// the first element is always MaxInt as we always fill in the zero level.
 	// also the math below will overflow and wrap negative
 	table[0] = math.MaxInt
 	for i := 1; i < level; i++ {
-		prob := math.Pow(probability, float64(i))
+		prob := math.Pow(2, float64(-i))
 		table[i] = int(math.Floor(math.MaxInt * prob))
 	}
 	return table
