@@ -25,7 +25,7 @@ type SL struct {
 
 type Element struct {
 	levelLinks []link
-	value      Orderable
+	Value      Orderable
 }
 
 func (e *Element) String() string {
@@ -33,7 +33,7 @@ func (e *Element) String() string {
 	for i, l := range e.levelLinks {
 		ss[i] = l.String()
 	}
-	return fmt.Sprintf("%p %v %s", e, e.value, strings.Join(ss, "\t"))
+	return fmt.Sprintf("%p %v %s", e, e.Value, strings.Join(ss, "\t"))
 }
 
 type link struct {
@@ -83,11 +83,11 @@ func (sl *SL) Set(v Orderable) {
 	}
 	// new head
 	// swap the links to the new and then insert the old head value as normal
-	if v.Less(sl.head.value) {
+	if v.Less(sl.head.Value) {
 		oldHead := sl.head
 		e.levelLinks = oldHead.levelLinks
 		sl.head = e
-		e = sl.newElement(oldHead.value)
+		e = sl.newElement(oldHead.Value)
 		//fmt.Println("New head")
 		//printList(sl)
 	}
@@ -107,7 +107,7 @@ func (sl *SL) Set(v Orderable) {
 		//printList(sl)
 	}
 
-	_, _, prevLinks, lskips := sl.prevWithLinks(e.value)
+	_, _, prevLinks, lskips := sl.prevWithLinks(e.Value)
 
 	// prevStrings := make([]string, len(prevLinks))
 	// for i, p := range prevLinks {
@@ -155,7 +155,7 @@ func (sl *SL) prevWithLinks(v Orderable) (indexCounter int, e *Element, prev []*
 	for i := 0; i < height; i++ {
 		// start at the highest level
 		l := height - 1 - i
-		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(v) {
+		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.Value.Less(v) {
 			sl.lskips[l] += runner.levelLinks[l].offset
 			indexCounter += runner.levelLinks[l].offset
 			runner = runner.levelLinks[l].next
@@ -198,14 +198,14 @@ func (sl *SL) Get(v Orderable) (int, *Element) {
 	if sl.head == nil {
 		return 0, nil
 	}
-	if v.Less(sl.head.value) {
+	if v.Less(sl.head.Value) {
 		return 0, nil
 	}
 	indexCounter, runner := sl.prevElement(v)
-	if runner.value.Equal(v) {
+	if runner.Value.Equal(v) {
 		return indexCounter, runner.levelLinks[0].next
 	}
-	if runner.levelLinks[0].next != nil && runner.levelLinks[0].next.value.Equal(v) {
+	if runner.levelLinks[0].next != nil && runner.levelLinks[0].next.Value.Equal(v) {
 		return indexCounter + 1, runner.levelLinks[0].next
 	}
 	return indexCounter + 1, nil
@@ -216,7 +216,7 @@ func (sl *SL) prevElement(v Orderable) (int, *Element) {
 	indexCounter := 0
 	// start at the highest level
 	for l := sl.height() - 1; l >= 0; l-- {
-		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.value.Less(v) {
+		for runner.levelLinks[l].next != nil && runner.levelLinks[l].next.Value.Less(v) {
 			indexCounter += runner.levelLinks[l].offset
 			runner = runner.levelLinks[l].next
 		}
@@ -229,7 +229,7 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 		return 0, nil
 	}
 	// remove the head, make the second node the head
-	if sl.head.value.Equal(v) {
+	if sl.head.Value.Equal(v) {
 		oldHead := sl.head
 		newHead := sl.head.levelLinks[0].next
 		if newHead != nil {
@@ -254,7 +254,7 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 
 	// didn't find it
 	removeMe := runner.levelLinks[0].next
-	if removeMe == nil || !removeMe.value.Equal(v) {
+	if removeMe == nil || !removeMe.Value.Equal(v) {
 		return 0, nil
 	}
 
@@ -281,7 +281,7 @@ func (sl *SL) newElement(v Orderable) *Element {
 	l := sl.randLevel()
 	return &Element{
 		levelLinks: make([]link, l+1),
-		value:      v,
+		Value:      v,
 	}
 }
 
@@ -298,7 +298,7 @@ func printList(sl *SL) {
 
 const (
 	DefaultMaxLevel int = 18
-	// DefaultProbability inverse so 2 => 1/2 for each subsequent level
+	// DefaultProbability inverse so 2 => 1/2 as likely for each subsequent level
 	DefaultProbability = 2
 )
 
