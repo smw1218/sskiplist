@@ -76,37 +76,53 @@ func BenchmarkSet(b *testing.B) {
 }
 func TestFull(t *testing.T) {
 	stuff := []OrderableInt{7, 5, 2, 9, 1, 3, 4, 6}
+	indexesAtSet := []int{0, 0, 0, 3, 0, 2, 3, 5}
 	//stuff := []OrderableInt{7, 5, 2, 9, 1}
 	lenstuff := len(stuff)
 	sl := NewWithLevel(10)
-	for _, v := range stuff {
-		sl.Set(v)
+	for i, v := range stuff {
+		idx, e := sl.Set(v)
 
+		//PrintList(sl)
+		if !e.Value.Equal(v) {
+			t.Fatalf("wrong return from set %v, expected %v", e.Value, v)
+		}
+		if idx != indexesAtSet[i] {
+			t.Fatalf("wrong index after set %d got %d, expected %d", v, idx, indexesAtSet[i])
+		}
 		err := sl.checkOffsets()
 		if err != nil {
-			printList(sl)
+			PrintList(sl)
 			t.Fatalf("Corrupted list from Set %v: %v", v, err)
 		}
 	}
-	printList(sl)
+	PrintList(sl)
 	if sl.Size() != lenstuff {
 		t.Errorf("Wrong size %d, expected %d", sl.Size(), lenstuff)
 	}
 
+	checkIndex := true
 	idx, e := sl.Get(OrderableInt(7))
 	t.Logf("Get val 7 %d %v\n", idx, e)
-
+	if checkIndex && idx != 6 {
+		t.Fatalf("wrong index %d, expected %d", idx, 6)
+	}
 	idx, e = sl.Get(OrderableInt(1))
 	t.Logf("Get val 1 %d %v\n", idx, e)
-
+	if checkIndex && idx != 0 {
+		t.Fatalf("wrong index %d, expected %d", idx, 0)
+	}
 	idx, e = sl.Get(OrderableInt(9))
 	t.Logf("Get %d %v\n", idx, e)
+	if checkIndex && idx != 7 {
+		t.Fatalf("wrong index %d, expected %d", idx, 7)
+	}
 
 	idx, e = sl.Remove(OrderableInt(5))
 	t.Logf("Rem %d %v\n", idx, e)
 	err := sl.checkOffsets()
 	if err != nil {
-		printList(sl)
+		PrintList(sl)
 		t.Fatalf("Corrupted list from Rem 5: %v", err)
 	}
 	if sl.Size() != lenstuff-1 {
@@ -117,7 +133,7 @@ func TestFull(t *testing.T) {
 	t.Logf("Rem %d %v\n", idx, e)
 	err = sl.checkOffsets()
 	if err != nil {
-		printList(sl)
+		PrintList(sl)
 		t.Fatalf("Corrupted list from Rem 1: %v", err)
 	}
 	if sl.Size() != lenstuff-2 {

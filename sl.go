@@ -62,6 +62,9 @@ func NewWithLevel(maxLevel int) *SL {
 // current height in level is the height of
 // the head's levelLinks
 func (sl *SL) height() int {
+	if sl.head == nil {
+		return 0
+	}
 	return len(sl.head.levelLinks)
 }
 
@@ -69,7 +72,7 @@ func (sl *SL) Size() int {
 	return sl.len
 }
 
-func (sl *SL) Set(v Orderable) {
+func (sl *SL) Set(v Orderable) (int, *Element) {
 	//fmt.Println("Starting insert", v)
 	e := sl.newElement(v)
 	// first insertion
@@ -79,10 +82,11 @@ func (sl *SL) Set(v Orderable) {
 			e.levelLinks[i].offset = 1
 		}
 		sl.len = 1
-		return
+		return 0, e
 	}
 	// new head
 	// swap the links to the new and then insert the old head value as normal
+	newHead := false
 	if v.Less(sl.head.Value) {
 		oldHead := sl.head
 		e.levelLinks = oldHead.levelLinks
@@ -90,6 +94,7 @@ func (sl *SL) Set(v Orderable) {
 		e = sl.newElement(oldHead.Value)
 		//fmt.Println("New head")
 		//printList(sl)
+		newHead = true
 	}
 
 	// if the new element increases the current max level
@@ -107,7 +112,7 @@ func (sl *SL) Set(v Orderable) {
 		//printList(sl)
 	}
 
-	_, _, prevLinks, lskips := sl.prevWithLinks(e.Value)
+	indexCounter, _, prevLinks, lskips := sl.prevWithLinks(e.Value)
 
 	// prevStrings := make([]string, len(prevLinks))
 	// for i, p := range prevLinks {
@@ -142,6 +147,10 @@ func (sl *SL) Set(v Orderable) {
 		}
 	}
 	sl.len++
+	if newHead {
+		return 0, sl.head
+	}
+	return indexCounter + 1, e
 }
 
 func (sl *SL) prevWithLinks(v Orderable) (indexCounter int, e *Element, prev []*link, lskips []int) {
@@ -285,7 +294,7 @@ func (sl *SL) newElement(v Orderable) *Element {
 	}
 }
 
-func printList(sl *SL) {
+func PrintList(sl *SL) {
 	runner := sl.head
 	i := 0
 	for runner != nil {
@@ -305,8 +314,9 @@ const (
 // returns the level index (zero-based)
 func (sl *SL) randLevel() int {
 	r := sl.randGen.Int()
+	height := sl.height()
 	for i := 1; i < len(sl.levelLookup); i++ {
-		if r > sl.levelLookup[i] {
+		if r > sl.levelLookup[i] || i > height {
 			return i - 1
 		}
 	}
