@@ -83,7 +83,7 @@ func TestFull(t *testing.T) {
 	for i, v := range stuff {
 		idx, e := sl.Set(v)
 
-		//PrintList(sl)
+		PrintList(sl)
 		if !e.Value.Equal(v) {
 			t.Fatalf("wrong return from set %v, expected %v", e.Value, v)
 		}
