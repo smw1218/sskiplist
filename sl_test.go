@@ -83,7 +83,7 @@ func TestFull(t *testing.T) {
 	for i, v := range stuff {
 		idx, e := sl.Set(v)
 
-		PrintList(sl)
+		//PrintList(sl)
 		if !e.Value.Equal(v) {
 			t.Fatalf("wrong return from set %v, expected %v", e.Value, v)
 		}
@@ -96,7 +96,7 @@ func TestFull(t *testing.T) {
 			t.Fatalf("Corrupted list from Set %v: %v", v, err)
 		}
 	}
-	PrintList(sl)
+	//PrintList(sl)
 	if sl.Size() != lenstuff {
 		t.Errorf("Wrong size %d, expected %d", sl.Size(), lenstuff)
 	}
@@ -116,6 +116,18 @@ func TestFull(t *testing.T) {
 	t.Logf("Get %d %v\n", idx, e)
 	if checkIndex && idx != 7 {
 		t.Fatalf("wrong index %d, expected %d", idx, 7)
+	}
+
+	e = sl.GetAt(3)
+	if e.Value.(OrderableInt) != 4 {
+		PrintList(sl)
+		t.Fatalf("Expected 4 at index 3 got %v", e.Value)
+	}
+
+	e = sl.GetAt(7)
+	if e.Value.(OrderableInt) != 9 {
+		PrintList(sl)
+		t.Fatalf("Expected 9 at index 7 got %v", e.Value)
 	}
 
 	idx, e = sl.Remove(OrderableInt(5))

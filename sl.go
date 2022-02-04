@@ -7,11 +7,16 @@ import (
 	"strings"
 )
 
+// Orderable defines and interface for a value that
+// can be inserted into the SL.
 type Orderable interface {
 	Less(other interface{}) bool
 	Equal(other interface{}) bool
 }
 
+// SL is an indexable skip list
+// it is not goroutine safe so needs
+// external synchronization.
 type SL struct {
 	head        *Element
 	len         int
@@ -23,6 +28,11 @@ type SL struct {
 	lskips []int
 }
 
+// Element is a wrapper around the Orderable.
+// Calling Prev/Next on an Element after any modification to
+// the skip list with Set or Remove has nondeterministic behavior.
+// i.e, if you are locking for goroutines, you should do all the Prev/Next calls
+// in the same read-lock as the Get
 type Element struct {
 	levelLinks links
 	Value      Orderable
@@ -40,16 +50,6 @@ func (e *Element) Next() *Element {
 	return e.levelLinks[0].next
 }
 
-type links []link
-
-func (ls links) String() string {
-	ss := make([]string, len(ls))
-	for i, l := range ls {
-		ss[i] = l.String()
-	}
-	return strings.Join(ss, "\t")
-}
-
 type link struct {
 	next     *Element
 	previous *Element
@@ -60,15 +60,30 @@ func (l link) String() string {
 	return fmt.Sprintf("%010p %2d", l.previous, l.offset)
 }
 
+type links []link
+
+func (ls links) String() string {
+	ss := make([]string, len(ls))
+	for i, l := range ls {
+		ss[i] = l.String()
+	}
+	return strings.Join(ss, "\t")
+}
+
+// used for storing intermediate prev links
+// while traversing the skiplist
 type linkHolder struct {
 	prevLink *link
 	element  *Element
 }
 
+// New creates a SL prepared with the DefaultMaxLevel
 func New() *SL {
-	return NewWithLevel(18)
+	return NewWithLevel(DefaultMaxLevel)
 }
 
+// NewWithLevel creates a SL prepared with
+// the passed maxLevel
 func NewWithLevel(maxLevel int) *SL {
 	return &SL{
 		maxLevel:    maxLevel,
@@ -92,6 +107,8 @@ func (sl *SL) Size() int {
 	return sl.len
 }
 
+// Set adds v to the SL and returns the index and Element for the
+// insertion
 func (sl *SL) Set(v Orderable) (int, *Element) {
 	//fmt.Println("Starting insert", v)
 	e := sl.newElement(v)
@@ -229,6 +246,32 @@ func (sl *SL) checkOffsets() error {
 	return nil
 }
 
+// GetAt gets the item at the specific index. This returns nil if the index
+// is out of bounds.
+func (sl *SL) GetAt(index int) *Element {
+	if index == 0 {
+		return sl.head
+	}
+	if sl.head == nil {
+		return nil
+	}
+	if index >= sl.len {
+		return nil
+	}
+	runner := sl.head
+	indexCounter := 0
+	for l := sl.height() - 1; l >= 0; l-- {
+		for runner != nil && indexCounter+runner.levelLinks[l].offset <= index {
+			indexCounter += runner.levelLinks[l].offset
+			runner = runner.levelLinks[l].next
+		}
+	}
+	return runner
+}
+
+// Get attempt find the item where v.Equal is true
+// Element returned and the index as well. If no Equal item is found,
+// this returns 0, nil
 func (sl *SL) Get(v Orderable) (int, *Element) {
 	if sl.head == nil {
 		return 0, nil
@@ -259,6 +302,10 @@ func (sl *SL) prevElement(v Orderable) (int, *Element) {
 	return indexCounter, runner
 }
 
+// Remove will remove a single item where v.Equal is true.
+// If a removal is successful, the returned Element will be the
+// Element returned and the index as well. If no removal occurred,
+// this returns 0, nil
 func (sl *SL) Remove(v Orderable) (int, *Element) {
 	if sl.head == nil {
 		return 0, nil
@@ -324,6 +371,10 @@ func (sl *SL) newElement(v Orderable) *Element {
 	}
 }
 
+// PrintList is mostly for debugging and prints
+// the entire SL with all the level links (you've been warned).
+// Each element is preintg per line so the levels grow to the right
+// rather than the wikipedia horizonatal elements.
 func PrintList(sl *SL) {
 	runner := sl.head
 	i := 0
@@ -342,6 +393,8 @@ const (
 )
 
 // returns the level index (zero-based)
+// it restricts growing the height of the list by one level at a time;
+// no good reason other than I saw another SL do this
 func (sl *SL) randLevel() int {
 	r := sl.randGen.Int()
 	height := sl.height()
