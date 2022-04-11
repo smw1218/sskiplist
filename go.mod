@@ -1,3 +1,3 @@
 module github.com/smw1218/sskiplist
 
-go 1.17
+go 1.18

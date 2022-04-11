@@ -9,22 +9,22 @@ import (
 
 // Orderable defines and interface for a value that
 // can be inserted into the SL.
-type Orderable interface {
-	Less(other interface{}) bool
-	Equal(other interface{}) bool
+type Orderable[T any] interface {
+	Less(other T) bool
+	Equal(other T) bool
 }
 
 // SL is an indexable skip list
 // it is not goroutine safe so needs
 // external synchronization.
-type SL struct {
-	head        *Element
+type SL[T Orderable[T]] struct {
+	head        *Element[T]
 	len         int
 	maxLevel    int
 	levelLookup []int
 	randGen     *rand.Rand
 	// pre-allocations; this is very explicitly not goroutine safe
-	prev   []linkHolder
+	prev   []linkHolder[T]
 	lskips []int
 }
 
@@ -33,36 +33,36 @@ type SL struct {
 // the skip list with Set or Remove has nondeterministic behavior.
 // i.e, if you are locking for goroutines, you should do all the Prev/Next calls
 // in the same read-lock as the Get
-type Element struct {
-	levelLinks links
-	Value      Orderable
+type Element[T Orderable[T]] struct {
+	levelLinks links[T]
+	Value      T
 }
 
-func (e *Element) String() string {
+func (e *Element[T]) String() string {
 	return fmt.Sprintf("%p %v %s", e, e.Value, e.levelLinks)
 }
 
-func (e *Element) Prev() *Element {
+func (e *Element[T]) Prev() *Element[T] {
 	return e.levelLinks[0].previous
 }
 
-func (e *Element) Next() *Element {
+func (e *Element[T]) Next() *Element[T] {
 	return e.levelLinks[0].next
 }
 
-type link struct {
-	next     *Element
-	previous *Element
+type link[T Orderable[T]] struct {
+	next     *Element[T]
+	previous *Element[T]
 	offset   int
 }
 
-func (l link) String() string {
+func (l link[T]) String() string {
 	return fmt.Sprintf("%010p %2d", l.previous, l.offset)
 }
 
-type links []link
+type links[T Orderable[T]] []link[T]
 
-func (ls links) String() string {
+func (ls links[T]) String() string {
 	ss := make([]string, len(ls))
 	for i, l := range ls {
 		ss[i] = l.String()
@@ -72,44 +72,44 @@ func (ls links) String() string {
 
 // used for storing intermediate prev links
 // while traversing the skiplist
-type linkHolder struct {
-	prevLink *link
-	element  *Element
+type linkHolder[T Orderable[T]] struct {
+	prevLink *link[T]
+	element  *Element[T]
 }
 
 // New creates a SL prepared with the DefaultMaxLevel
-func New() *SL {
-	return NewWithLevel(DefaultMaxLevel)
+func New[T Orderable[T]]() *SL[T] {
+	return NewWithLevel[T](DefaultMaxLevel)
 }
 
 // NewWithLevel creates a SL prepared with
 // the passed maxLevel
-func NewWithLevel(maxLevel int) *SL {
-	return &SL{
+func NewWithLevel[T Orderable[T]](maxLevel int) *SL[T] {
+	return &SL[T]{
 		maxLevel:    maxLevel,
 		levelLookup: probabilityTable(maxLevel),
 		randGen:     rand.New(rand.NewSource(7)), // make this deterministic
-		prev:        make([]linkHolder, maxLevel),
+		prev:        make([]linkHolder[T], maxLevel),
 		lskips:      make([]int, maxLevel),
 	}
 }
 
 // current height in level is the height of
 // the head's levelLinks
-func (sl *SL) height() int {
+func (sl *SL[T]) height() int {
 	if sl.head == nil {
 		return 0
 	}
 	return len(sl.head.levelLinks)
 }
 
-func (sl *SL) Size() int {
+func (sl *SL[T]) Size() int {
 	return sl.len
 }
 
 // Set adds v to the SL and returns the index and Element for the
 // insertion
-func (sl *SL) Set(v Orderable) (int, *Element) {
+func (sl *SL[T]) Set(v T) (int, *Element[T]) {
 	//fmt.Println("Starting insert", v)
 	e := sl.newElement(v)
 	// first insertion
@@ -137,7 +137,7 @@ func (sl *SL) Set(v Orderable) (int, *Element) {
 	// if the new element increases the current max level
 	// for the list, increase the head to match
 	if len(e.levelLinks) > sl.height() {
-		newLinks := make([]link, len(e.levelLinks))
+		newLinks := make([]link[T], len(e.levelLinks))
 		for i, l := range sl.head.levelLinks {
 			newLinks[i] = l
 		}
@@ -194,7 +194,7 @@ func (sl *SL) Set(v Orderable) (int, *Element) {
 	return indexCounter + 1, e
 }
 
-func (sl *SL) prevWithLinks(v Orderable) (indexCounter int, e *Element, prev []linkHolder, lskips []int) {
+func (sl *SL[T]) prevWithLinks(v T) (indexCounter int, e *Element[T], prev []linkHolder[T], lskips []int) {
 	// search from the head
 	runner := sl.head
 	//prev = make([]*link, sl.height())
@@ -217,7 +217,7 @@ func (sl *SL) prevWithLinks(v Orderable) (indexCounter int, e *Element, prev []l
 	return indexCounter, runner, sl.prev[:height], sl.lskips[:height]
 }
 
-func (sl *SL) resetPrevs(height int) {
+func (sl *SL[T]) resetPrevs(height int) {
 	for i := 0; i < height; i++ {
 		sl.prev[i].prevLink = nil
 		sl.prev[i].element = nil
@@ -226,7 +226,7 @@ func (sl *SL) resetPrevs(height int) {
 }
 
 // for testing
-func (sl *SL) checkOffsets() error {
+func (sl *SL[T]) checkOffsets() error {
 	runner := sl.head
 	offsetSums := make([]int, sl.height())
 	for runner != nil {
@@ -248,7 +248,7 @@ func (sl *SL) checkOffsets() error {
 
 // GetAt gets the item at the specific index. This returns nil if the index
 // is out of bounds.
-func (sl *SL) GetAt(index int) *Element {
+func (sl *SL[T]) GetAt(index int) *Element[T] {
 	if index == 0 {
 		return sl.head
 	}
@@ -272,7 +272,7 @@ func (sl *SL) GetAt(index int) *Element {
 // Get attempt find the item where v.Equal is true
 // Element returned and the index as well. If no Equal item is found,
 // this returns 0, nil
-func (sl *SL) Get(v Orderable) (int, *Element) {
+func (sl *SL[T]) Get(v T) (int, *Element[T]) {
 	if sl.head == nil {
 		return 0, nil
 	}
@@ -289,7 +289,7 @@ func (sl *SL) Get(v Orderable) (int, *Element) {
 	return indexCounter + 1, nil
 }
 
-func (sl *SL) prevElement(v Orderable) (int, *Element) {
+func (sl *SL[T]) prevElement(v T) (int, *Element[T]) {
 	runner := sl.head
 	indexCounter := 0
 	// start at the highest level
@@ -306,7 +306,7 @@ func (sl *SL) prevElement(v Orderable) (int, *Element) {
 // If a removal is successful, the returned Element will be the
 // Element returned and the index as well. If no removal occurred,
 // this returns 0, nil
-func (sl *SL) Remove(v Orderable) (int, *Element) {
+func (sl *SL[T]) Remove(v T) (int, *Element[T]) {
 	if sl.head == nil {
 		return 0, nil
 	}
@@ -315,7 +315,7 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 		oldHead := sl.head
 		newHead := sl.head.levelLinks[0].next
 		if newHead != nil {
-			newLevelLinks := make([]link, len(oldHead.levelLinks))
+			newLevelLinks := make([]link[T], len(oldHead.levelLinks))
 			// copy whatever levelinks exist on the new head
 			for i, l := range newHead.levelLinks {
 				newLevelLinks[i] = l
@@ -363,10 +363,10 @@ func (sl *SL) Remove(v Orderable) (int, *Element) {
 	return indexCounter, removeMe
 }
 
-func (sl *SL) newElement(v Orderable) *Element {
+func (sl *SL[T]) newElement(v T) *Element[T] {
 	l := sl.randLevel()
-	return &Element{
-		levelLinks: make([]link, l+1),
+	return &Element[T]{
+		levelLinks: make([]link[T], l+1),
 		Value:      v,
 	}
 }
@@ -375,7 +375,7 @@ func (sl *SL) newElement(v Orderable) *Element {
 // the entire SL with all the level links (you've been warned).
 // Each element is preintg per line so the levels grow to the right
 // rather than the wikipedia horizonatal elements.
-func PrintList(sl *SL) {
+func PrintList[T Orderable[T]](sl *SL[T]) {
 	runner := sl.head
 	i := 0
 	for runner != nil {
@@ -395,7 +395,7 @@ const (
 // returns the level index (zero-based)
 // it restricts growing the height of the list by one level at a time;
 // no good reason other than I saw another SL do this
-func (sl *SL) randLevel() int {
+func (sl *SL[T]) randLevel() int {
 	r := sl.randGen.Int()
 	height := sl.height()
 	for i := 1; i < len(sl.levelLookup); i++ {

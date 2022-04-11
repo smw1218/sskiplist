@@ -9,12 +9,12 @@ import (
 
 type OrderableInt int
 
-func (io OrderableInt) Equal(other interface{}) bool {
-	return io == other.(OrderableInt)
+func (io OrderableInt) Equal(other OrderableInt) bool {
+	return io == other
 }
 
-func (io OrderableInt) Less(other interface{}) bool {
-	return io < other.(OrderableInt)
+func (io OrderableInt) Less(other OrderableInt) bool {
+	return io < other
 }
 
 const testingSize = 500000
@@ -22,7 +22,7 @@ const testingSize = 500000
 func TestSetLevelDistribution(t *testing.T) {
 	t.Skip()
 	size := testingSize
-	sl := NewWithLevel(18)
+	sl := NewWithLevel[OrderableInt](18)
 	for i := 0; i < size; i++ {
 		sl.Set(OrderableInt(i))
 	}
@@ -42,7 +42,7 @@ func TestSetLevelDistribution(t *testing.T) {
 func BenchmarkGet(b *testing.B) {
 	//b.Skip()
 	size := testingSize
-	sl := NewWithLevel(18)
+	sl := NewWithLevel[OrderableInt](18)
 	for i := 0; i < size; i++ {
 		sl.Set(OrderableInt(i))
 	}
@@ -65,7 +65,7 @@ func BenchmarkSet(b *testing.B) {
 		b.Fatalf("Failed prof create: %v", err)
 	}
 
-	sl := NewWithLevel(18)
+	sl := NewWithLevel[OrderableInt](18)
 
 	b.ResetTimer()
 	pprof.StartCPUProfile(f)
@@ -79,7 +79,7 @@ func TestFull(t *testing.T) {
 	indexesAtSet := []int{0, 0, 0, 3, 0, 2, 3, 5}
 	//stuff := []OrderableInt{7, 5, 2, 9, 1}
 	lenstuff := len(stuff)
-	sl := NewWithLevel(10)
+	sl := NewWithLevel[OrderableInt](10)
 	for i, v := range stuff {
 		idx, e := sl.Set(v)
 
@@ -119,13 +119,13 @@ func TestFull(t *testing.T) {
 	}
 
 	e = sl.GetAt(3)
-	if e.Value.(OrderableInt) != 4 {
+	if e.Value != 4 {
 		PrintList(sl)
 		t.Fatalf("Expected 4 at index 3 got %v", e.Value)
 	}
 
 	e = sl.GetAt(7)
-	if e.Value.(OrderableInt) != 9 {
+	if e.Value != 9 {
 		PrintList(sl)
 		t.Fatalf("Expected 9 at index 7 got %v", e.Value)
 	}
@@ -156,7 +156,7 @@ func TestFull(t *testing.T) {
 //func BenchmarkTestProbTable(t *testing.B) {
 func TestProbTable(t *testing.T) {
 	t.Skip()
-	sl := New()
+	sl := New[OrderableInt]()
 	table := sl.levelLookup
 	// for i, p := range table {
 	// 	fmt.Printf("%d\t%d\n", i, p)
